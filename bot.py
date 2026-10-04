@@ -108,7 +108,7 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         texto_promos = "🎟️ **PASES Y PROMOCIONES ACTIVAS:**\n\n"
         for i, promo in enumerate(PROMOS_ACTIVAS, 1):
-            texto_promos += f"-----------------------------------\n{promo}\n\n"
+            texto_promos += f"-----------------------------------\n🔹 **Promo #{i}**\n{promo}\n\n"
         
         texto_promos += "💸 ¿Te late alguna? Mándame un mensaje directo con el comprobante de transferencia y te abro la puerta al Edén."
         await query.message.reply_text(texto_promos, parse_mode="Markdown")
@@ -133,7 +133,26 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "admin_ver_activas":
         if update.effective_user.id != ADMIN_ID:
             return
-        await query.message.reply_text(f"📋 Tienes actualmente **{len(PROMOS_ACTIVAS)}** promoción(es) activa(s) en el sistema.", parse_mode="Markdown")
+        if not PROMOS_ACTIVAS:
+            await query.message.reply_text("📋 No hay ninguna promoción activa en este momento.")
+            return
+        
+        # Te enviamos cada promo con su propio botón para eliminarla individualmente
+        for i, promo in enumerate(PROMOS_ACTIVAS):
+            teclado_borrar = [[InlineKeyboardButton(f"🗑️ Eliminar Promo #{i+1}", callback_data=f"borrar_{i}")]]
+            texto_item = f"📋 **Promo #{i+1}:**\n\n{promo}"
+            await query.message.reply_text(texto_item, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado_borrar))
+
+    elif query.data.startswith("borrar_"):
+        if update.effective_user.id != ADMIN_ID:
+            return
+        
+        indice = int(query.data.split("_")[1])
+        try:
+            promo_eliminada = PROMOS_ACTIVAS.pop(indice)
+            await query.message.edit_text("🗑️ **¡Promoción eliminada del sistema con éxito!**", parse_mode="Markdown")
+        except IndexError:
+            await query.message.reply_text("❌ Esa promoción ya había sido eliminada o no existe.")
 
     elif query.data.startswith("aprobar_"):
         if update.effective_user.id != ADMIN_ID:
@@ -147,7 +166,6 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=cliente_id,
                 text="✅ ¡Comprobante aprobado por el Goldenboy!\n\nEn un momento te comparto tus accesos de forma manual por este medio. ¡A cobrar se ha dicho! 💰"
             )
-            # Validamos si la captura tiene caption para no perderlo al actualizar
             old_caption = query.message.caption or ""
             await query.edit_message_caption(caption=old_caption + "\n\n🟢 **[PAGO APROBADO]**")
         except Exception as e:
