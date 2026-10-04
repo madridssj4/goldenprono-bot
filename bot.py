@@ -109,6 +109,12 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.message.reply_text(datos_pago, parse_mode="Markdown")
 
+    elif query.data == "admin_agregar_promo":
+        if update.effective_user.id != ADMIN_ID:
+            return
+        await query.message.reply_text("A ver, Goldenboy. Escribe el texto del nuevo pick individual o promoción:")
+        # Opcional: puedes activar el estado de la conversación aquí mismo
+
     elif query.data.startswith("aprobar_"):
         if update.effective_user.id != ADMIN_ID:
             await query.answer("¡Hey! Tú no mandas aquí.", show_alert=True)
@@ -207,3 +213,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# --- PANEL DE CONTROL EXCLUSIVO PARA EL ADMIN ---
+async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Zona prohibida, patrón. Aquí solo manda el dueño.")
+        return
+    
+    teclado = [
+        [InlineKeyboardButton("➕ Agregar Promo o Pick Individual", callback_data="admin_agregar_promo")],
+        [InlineKeyboardButton("📋 Ver Promos Activas", callback_data="admin_ver_activas")]
+    ]
+    await update.message.reply_text(
+        "🎛️ **PANEL DE CONTROL DEL JEFESITO:**\n\n¿Qué vamos a publicar o modificar hoy?",
+        reply_markup=InlineKeyboardMarkup(teclado),
+        parse_mode="Markdown"
+    )
