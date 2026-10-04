@@ -1,4 +1,7 @@
 import logging
+import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,7 +13,7 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-# Configuración básica de logs para ver qué pasa en consola
+# Configuración básica de logs
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # ================= CONFIGURACIÓN =================
@@ -31,10 +34,8 @@ ENLACES_VIP = [
 # =================================================
 
 # Estados para la conversación de agregar promos
-PEDIR_TITULO, PEDIR_PRECIO = range(2)
+PEDIR_INFO_PROMO = range(1)
 
-# Memoria temporal para guardar las promociones (se reinicia si apagas el script, 
-# luego podemos pasarla a una base de datos si lo requieres)
 PROMOS_ACTIVAS = [
     (
         "🔥 **GRUPO PREMIUM DE GOLDEN BOY PICKS**\n\n"
@@ -50,6 +51,17 @@ PROMOS_ACTIVAS = [
     )
 ]
 
+# --- SERVIDOR WEB FALSO PARA RENDER (Evita que se apague) ---
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot Ludopata activo 24/7!")
+
+def run_dummy_server():
+    server = HTTPServer(('0.0.0.0', 10000), DummyHandler)
+    server.serve_forever()
+
 # --- 1. SALUDO Y BIENVENIDA NATURAL ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name
@@ -60,7 +72,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Échale un ojo a lo que tenemos activo antes de que la casa nos vuelva a bloquear."
     )
     
-    # Botones interactivos rápidos
     teclado = [
         [InlineKeyboardButton("📊 Ver Promociones y Precios", callback_data="ver_promos")],
         [InlineKeyboardButton("💳 Métodos de Pago", callback_data="ver_pagos")]
@@ -83,12 +94,12 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, promo in enumerate(PROMOS_ACTIVAS, 1):
             texto_promos += f"-----------------------------------\n{promo}\n\n"
         
-        texto_promos += "💸 ¿Chingón, no? Mándame un mensaje directo con el comprobante de transferencia y te abro la puerta a la fortuna."
+        texto_promos += "💸 ¿Te late alguna? Mándame un mensaje directo con el comprobante de transferencia y te abro la puerta al Edén."
         await query.message.reply_text(texto_promos, parse_mode="Markdown")
         
     elif query.data == "ver_pagos":
         datos_pago = (
-            "🏦 **DATOS PARA LO QUE IMPORTA:**\n\n"
+            "🏦 **DATOS PARA CAERLE CON LA LANA:**\n\n"
             "• **Banco:** BBVA\n"
             "• **CLABE:** `012180015465460667`\n"
             "• **CONCEPTO:** 'ASESORIA'\n"
@@ -119,18 +130,15 @@ async def manejar_mensajes_libres(update: Update, context: ContextTypes.DEFAULT_
     mensaje = update.message
     user = update.effective_user
     
-    # Si mandan una FOTO (Asumimos que es el comprobante de pago)
     if mensaje.photo and user.id != ADMIN_ID:
         foto_file_id = mensaje.photo[-1].file_id
         
-        # Le respondemos al cliente para calmar su ansiedad lúdica
         await mensaje.reply_text(
             "¡Vaya, un valiente que sí confía en el proceso! 💸\n\n"
-            "Comprobante recibido. Le acabo de chiflar al Goldenboy para que revise si de verdad cayó la lana o si me mandaste un recibo de la luz. En cuanto dé el visto bueno, te paso la llave."
+            "Comprobante recibido. Le acabo de chiflar al Goldenboy para que revise si de verdad cayó la lana. En cuanto dé el visto bueno, te mando el acceso."
         )
         
-        # Notificamos al ADMIN (tú) en privado con un botón para aprobar al instante
-        teclado_admin = [[InlineKeyboardButton("✅ Aprobar y Dar Acceso", callback_data=f"aprobar_{user.id}")]]
+        teclado_admin = [[InlineKeyboardButton("✅ Aprobar Pago", callback_data=f"aprobar_{user.id}")]]
         
         await context.bot.send_photo(
             chat_id=ADMIN_ID,
@@ -141,7 +149,6 @@ async def manejar_mensajes_libres(update: Update, context: ContextTypes.DEFAULT_
         )
         return
 
-    # Si escriben texto normal conversacional
     if mensaje.text and user.id != ADMIN_ID:
         texto = mensaje.text.lower()
         if any(palabra in texto for palabra in ["hola", "buenos", "info", "precios", "promos", "cuenta"]):
@@ -149,45 +156,38 @@ async def manejar_mensajes_libres(update: Update, context: ContextTypes.DEFAULT_
                 "¡Quihubo! ¿Qué se te ofrece, mi estimado? Si vienes por los accesos, escribe /start para ver el menú o mándame de una vez tu captura de pago."
             )
 
-# --- 4. PANEL DE ADMINISTRACIÓN: AGREGAR PROMOS DESDE EL MÓVIL ---
+# --- 4. PANEL DE ADMINISTRACIÓN RÁPIDO ---
 async def cmd_agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Comando exclusivo para el dueño del changarro.")
         return ConversationHandler.END
     
-    await update.message.reply_text("A ver, patrón. ¿Cómo se va a llamar la nueva promoción o pase?")
-    return PEDIR_TITULO
+    await update.message.reply_text("A ver, patrón. Escribe el texto completo de la nueva promoción que quieres agregar:")
+    return PEDIR_INFO_PROMO
 
-async def recibir_titulo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['nuevo_titulo'] = update.message.text
-    await update.message.reply_text("Perfecto. Ahora dime el **precio** (ej. $300 MXN):")
-    return PEDIR_PRECIO
-
-async def recibir_precio_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    precio = update.message.text
-    titulo = context.user_data['nuevo_titulo']
+async def recibir_nueva_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto_promo = update.message.text
+    PROMOS_ACTIVAS.append(texto_promo)
     
-    PROMOS_ACTIVAS.append({"titulo": titulo, "precio": precio})
-    
-    await update.message.reply_text(
-        f"✅ ¡Promo agregada al sistema con éxito!\n\n📌 **{titulo}** — **{precio}**\n\nYa está visible para los clientes cuando le piquen a ver promos."
-    )
+    await update.message.reply_text("✅ ¡Promo agregada al sistema con éxito y lista para mostrarse a la banda!")
     return ConversationHandler.END
 
 async def cancelar_proceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Operación cancelada. Nos fuimos a descanso.")
+    await update.message.reply_text("Operación cancelada.")
     return ConversationHandler.END
 
 
 def main():
+    # Arrancamos el servidor web falso para contentar a Render
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Manejador conversacional para que el Admin agregue promos paso a paso desde el cel
     conv_promo = ConversationHandler(
         entry_points=[CommandHandler('agregar', cmd_agregar)],
         states={
-            PEDIR_TITULO: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_titulo)],
-            PEDIR_PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_precio_promo)],
+            PEDIR_INFO_PROMO: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_nueva_promo)],
         },
         fallbacks=[CommandHandler('cancelar', cancelar_proceso)],
     )
@@ -197,8 +197,13 @@ def main():
     app.add_handler(CallbackQueryHandler(botones_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.TEXT, manejar_mensajes_libres))
 
-    print("🤖 Bot ludópata encendido y operando...")
-    app.run_polling()
+    print("🤖 Bot ludópata encendido y operando en la nube...")
+    
+    # Creamos y asignamos el event loop explícitamente para Python 3.14 en la nube
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
