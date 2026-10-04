@@ -46,12 +46,12 @@ PROMOS_ACTIVAS = [
         "• LOS REYES APP 👑 (CRISTIAN / MARCO / ROBERTO / CONSEJO ABUELO / OSCAR)\n"
         "• JUGADAS EXCLUSIVAS DE $2,000 DE CR Y DINÁMICAS 🤴🏻\n"
         "• GRUPO EXCLUSIVO DE GALLITO VIP + JAPO 🐓\n\n"
-        "➡️ **INCLUIMOS JUGADAS DE PAGA TODOS LOS DÍAS 👏**\n"
+        "➡️️ **INCLUIMOS JUGADAS DE PAGA TODOS LOS DÍAS 👏**\n"
         "💎 **COSTO: $250 PESOS (MES DE OCTUBRE)** 💰"
     )
 ]
 
-# --- SERVIDOR WEB FALSO PARA RENDER (Evita que se apague) ---
+# --- SERVIDOR WEB FALSO PARA RENDER (Evita que se apague en el plan gratuito) ---
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -80,7 +80,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(saludo, parse_mode="Markdown", reply_markup=reply_markup)
 
-# --- 2. MANEJADOR DE CLICS DE BOTONES ---
+# --- 2. PANEL DE CONTROL EXCLUSIVO PARA EL ADMIN ---
+async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Zona prohibida, patrón. Aquí solo manda el dueño.")
+        return
+    
+    teclado = [
+        [InlineKeyboardButton("➕ Agregar Promo o Pick Individual", callback_data="admin_agregar_promo")],
+        [InlineKeyboardButton("📋 Ver Promos Activas", callback_data="admin_ver_activas")]
+    ]
+    await update.message.reply_text(
+        "🎛️ **PANEL DE CONTROL DEL JEFESITO:**\n\n¿Qué vamos a publicar o modificar hoy?",
+        reply_markup=InlineKeyboardMarkup(teclado),
+        parse_mode="Markdown"
+    )
+
+# --- 3. MANEJADOR DE CLICS DE BOTONES ---
 async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -112,8 +128,12 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "admin_agregar_promo":
         if update.effective_user.id != ADMIN_ID:
             return
-        await query.message.reply_text("A ver, Goldenboy. Escribe el texto del nuevo pick individual o promoción:")
-        # Opcional: puedes activar el estado de la conversación aquí mismo
+        await query.message.reply_text("Para agregar una promo nueva, escribe el comando: `/agregar`", parse_mode="Markdown")
+
+    elif query.data == "admin_ver_activas":
+        if update.effective_user.id != ADMIN_ID:
+            return
+        await query.message.reply_text(f"📋 Tienes actualmente **{len(PROMOS_ACTIVAS)}** promoción(es) activa(s) en el sistema.", parse_mode="Markdown")
 
     elif query.data.startswith("aprobar_"):
         if update.effective_user.id != ADMIN_ID:
@@ -127,11 +147,13 @@ async def botones_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=cliente_id,
                 text="✅ ¡Comprobante aprobado por el Goldenboy!\n\nEn un momento te comparto tus accesos de forma manual por este medio. ¡A cobrar se ha dicho! 💰"
             )
-            await query.edit_message_caption(caption=query.message.caption + "\n\n🟢 **[PAGO APROBADO]**")
+            # Validamos si la captura tiene caption para no perderlo al actualizar
+            old_caption = query.message.caption or ""
+            await query.edit_message_caption(caption=old_caption + "\n\n🟢 **[PAGO APROBADO]**")
         except Exception as e:
             await query.message.reply_text(f"Hubo un error: {e}")
 
-# --- 3. RESPUESTA A TEXTO LIBRE Y COMPROBANTES ---
+# --- 4. RESPUESTA A TEXTO LIBRE Y COMPROBANTES ---
 async def manejar_mensajes_libres(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje = update.message
     user = update.effective_user
@@ -162,20 +184,20 @@ async def manejar_mensajes_libres(update: Update, context: ContextTypes.DEFAULT_
                 "¡Quihubo! ¿Qué se te ofrece, mi estimado? Si vienes por los accesos, escribe /start para ver el menú o mándame de una vez tu captura de pago."
             )
 
-# --- 4. PANEL DE ADMINISTRACIÓN RÁPIDO ---
+# --- 5. CONVERSACIÓN PARA AGREGAR PROMOS ---
 async def cmd_agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Comando exclusivo para el dueño del changarro.")
         return ConversationHandler.END
     
-    await update.message.reply_text("A ver, patrón. Escribe el texto completo de la nueva promoción que quieres agregar:")
+    await update.message.reply_text("A ver, patrón. Escribe el texto completo de la nueva promoción o pick individual que quieres agregar:")
     return PEDIR_INFO_PROMO
 
 async def recibir_nueva_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto_promo = update.message.text
     PROMOS_ACTIVAS.append(texto_promo)
     
-    await update.message.reply_text("✅ ¡Promo agregada al sistema con éxito y lista para mostrarse a la banda!")
+    await update.message.reply_text("✅ ¡Promo o pick agregado al sistema con éxito y listo para mostrarse a la banda!")
     return ConversationHandler.END
 
 async def cancelar_proceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,7 +206,7 @@ async def cancelar_proceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    # Arrancamos el servidor web falso para contentar a Render
+    # Arrancamos el servidor web falso en un hilo separado
     server_thread = threading.Thread(target=run_dummy_server, daemon=True)
     server_thread.start()
 
@@ -200,12 +222,13 @@ def main():
 
     app.add_handler(conv_promo)
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(botones_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.TEXT, manejar_mensajes_libres))
 
     print("🤖 Bot ludópata encendido y operando en la nube...")
     
-    # Creamos y asignamos el event loop explícitamente para Python 3.14 en la nube
+    # Event loop explícito y seguro para Render
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -213,19 +236,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# --- PANEL DE CONTROL EXCLUSIVO PARA EL ADMIN ---
-async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Zona prohibida, patrón. Aquí solo manda el dueño.")
-        return
-    
-    teclado = [
-        [InlineKeyboardButton("➕ Agregar Promo o Pick Individual", callback_data="admin_agregar_promo")],
-        [InlineKeyboardButton("📋 Ver Promos Activas", callback_data="admin_ver_activas")]
-    ]
-    await update.message.reply_text(
-        "🎛️ **PANEL DE CONTROL DEL JEFESITO:**\n\n¿Qué vamos a publicar o modificar hoy?",
-        reply_markup=InlineKeyboardMarkup(teclado),
-        parse_mode="Markdown"
-    )
