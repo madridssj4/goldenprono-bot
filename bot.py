@@ -241,6 +241,7 @@ def main():
     app.add_handler(conv_promo)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("agregar", cmd_agregar))
     app.add_handler(CallbackQueryHandler(botones_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.TEXT, manejar_mensajes_libres))
 
